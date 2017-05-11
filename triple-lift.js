@@ -1,15 +1,9 @@
 /**
  * File Information
  * =============================================================================
- * @overview  Partner Module Template
- * @version   1.5.x
- * @author    Index Exchange
- * @copyright Copyright (C) 2016 Index Exchange All Rights Reserved.
- *
- * The information contained within this document is confidential, copyrighted
- * and or a trade secret. No part of this document may be reproduced or
- * distributed in any form or by any means, in whole or in part, without the
- * prior written permission of Index Exchange.
+ * @overview  TripleLift Module
+ * @version   1.0.0
+ * @author    TripleLift
  * -----------------------------------------------------------------------------
  */
 
@@ -38,6 +32,16 @@ window.headertag.partnerScopes.push(function() {
      *                    called, and when it returns its retrieved demand.
      *          - demand: the targeting information returned from this module.
      *
+     * SUPPORTED_OPTIONS:
+     *     Other features that are supported by this module.
+     *
+     *          - prefetch:     If true, indicates that this module supports the
+     *                          retrieval of demand on page load through the
+     *                          prefetchDemand interface.
+     *          - demandExpiry: If set, indicates that demand retrieved and stored
+     *                          (as with the case of prefetched demand) should not
+     *                          be used after a set duration. A value less than 0
+     *                          indicates that demandExpiry is disabled.
      */
 
     var PARTNER_ID = 'TPL';
@@ -52,9 +56,19 @@ window.headertag.partnerScopes.push(function() {
         demand: true
     };
 
-    var SUPPORTED_OPTIONS = {};
+    var SUPPORTED_OPTIONS = {
+        prefetch: false,
+        demandExpiry: -1
+    };
 
     /* -------------------------------------------------------------------------- */
+
+    var prefetchState = {
+        NEW: 1,
+        IN_PROGRESS: 2,
+        READY: 3,
+        USED: 4
+    };
 
     var Utils = window.headertag.Utils;
     var Network = window.headertag.Network;
@@ -104,8 +118,8 @@ window.headertag.partnerScopes.push(function() {
             err.push('xSlots either not provided or invalid.');
             xSlotConfigValid = false;
         } else {
-            for(var xSlotName in config.xSlots){
-                if(!config.xSlots.hasOwnProperty(xSlotName)){
+            for (var xSlotName in config.xSlots) {
+                if (!config.xSlots.hasOwnProperty(xSlotName)) {
                     continue;
                 }
 
@@ -114,7 +128,6 @@ window.headertag.partnerScopes.push(function() {
          * -----------------------------------------------------------------------------
          *
          * Validate the specific configurations that must appear in each xSlot.
-         * An xSlot represents an ad slot as it is understood by the partner's end point.
          * Validation functions have been provided in the `Utils` object for
          * convenience. See ../lib/utils.js for more information.
          *
@@ -133,6 +146,12 @@ window.headertag.partnerScopes.push(function() {
          */
 
         /* PUT CODE HERE */
+                if (!config.xSlots[xSlotName].hasOwnProperty('inventoryCode')) {
+                    err.push('inventoryCode not provided for xSlot ' + xSlotName);
+                }
+                if (!config.xSlots[xSlotName].hasOwnProperty('sizes')) {
+                    err.push('sizes not provided for xSlot ' + xSlotName);
+                }
 
         /* -------------------------------------------------------------------------- */
 
@@ -144,22 +163,22 @@ window.headertag.partnerScopes.push(function() {
         } else {
             var seenXSlots = {};
 
-            for(var htSlotName in config.mapping){
-                if(!config.mapping.hasOwnProperty(htSlotName)){
+            for (var htSlotName in config.mapping) {
+                if (!config.mapping.hasOwnProperty(htSlotName)) {
                     continue;
                 }
 
                 var htSlotMapping = config.mapping[htSlotName];
 
-                if(!Utils.isArray(htSlotMapping) || !htSlotMapping.length){
+                if (!Utils.isArray(htSlotMapping) || !htSlotMapping.length) {
                     err.push('slot mappings missing or invalid for htSlot ' + htSlotName);
                 } else {
-                    for(var k = 0; k < htSlotMapping.length; k++){
-                        if(!Utils.validateNonEmptyString(htSlotMapping[k])){
+                    for (var k = 0; k < htSlotMapping.length; k++) {
+                        if (!Utils.validateNonEmptyString(htSlotMapping[k])) {
                             err.push('slot mappings missing or invalid for htSlot ' + htSlotName);
-                        } else if(xSlotConfigValid){
-                            if(config.xSlots.hasOwnProperty(htSlotMapping[k])){
-                                if(seenXSlots.hasOwnProperty(htSlotMapping[k])){
+                        } else if (xSlotConfigValid) {
+                            if (config.xSlots.hasOwnProperty(htSlotMapping[k])) {
+                                if (seenXSlots.hasOwnProperty(htSlotMapping[k])) {
                                     err.push('xSlot ' + htSlotMapping[k] + ' mapped multiple times in ' + PARTNER_ID +' config');
                                 } else {
                                     seenXSlots[htSlotMapping[k]] = true;
@@ -191,31 +210,31 @@ window.headertag.partnerScopes.push(function() {
             }
         }
 
-        if(config.hasOwnProperty('roundingBuckets')){
+        if (config.hasOwnProperty('roundingBuckets')) {
             if (!Utils.validateNonEmptyObject(config.roundingBuckets)) {
                 err.push('roundingBuckets must be a non-empty object');
             } else {
                 var rConf = config.roundingBuckets;
-                if(rConf.floor && (typeof rConf.floor !== 'number' || rConf.floor < 0)){
+                if (rConf.floor && (typeof rConf.floor !== 'number' || rConf.floor < 0)) {
                     err.push('roundingBuckets.floor must be a non-negative number');
                 }
-                if(rConf.inputCentsMultiplier && (typeof rConf.inputCentsMultiplier !== 'number' || rConf.inputCentsMultiplier < 0)){
+                if (rConf.inputCentsMultiplier && (typeof rConf.inputCentsMultiplier !== 'number' || rConf.inputCentsMultiplier < 0)) {
                     err.push('roundingBuckets.floor must be a non-negative number');
                 }
-                if(rConf.outputCentsDivisor && (typeof rConf.outputCentsDivisor !== 'number' || rConf.outputCentsDivisor < 0)){
+                if (rConf.outputCentsDivisor && (typeof rConf.outputCentsDivisor !== 'number' || rConf.outputCentsDivisor < 0)) {
                     err.push('roundingBuckets.floor must be a non-negative number');
                 }
-                if(rConf.outputPrecision && !Utils.validateInteger(rConf.outputPrecision)){
+                if (rConf.outputPrecision && !Utils.validateInteger(rConf.outputPrecision)) {
                     err.push('roundingBuckets.outputPrecision must be an integer');
                 }
-                if(rConf.roundingType && !Utils.validateInteger(rConf.roundingType, 0, 3)){
+                if (rConf.roundingType && !Utils.validateInteger(rConf.roundingType, 0, 3)) {
                     err.push('roundingBuckets.roundingType must be a valid rounding type');
                 }
-                if(rConf.buckets && (!Utils.isArray(rConf.buckets) || rConf.buckets.length === 0)){
+                if (rConf.buckets && (!Utils.isArray(rConf.buckets) || rConf.buckets.length === 0)) {
                     err.push('roundingBuckets.buckets must be an array');
                 } else {
-                    for(var l = 0; l < rConf.buckets.length; l++){
-                        if(!Utils.validateNonEmptyObject(rConf.buckets[l])){
+                    for (var l = 0; l < rConf.buckets.length; l++) {
+                        if (!Utils.validateNonEmptyObject(rConf.buckets[l])) {
                             err.push('roundingBuckets.buckets must contain non-empty objects');
                             break;
                         }
@@ -231,60 +250,81 @@ window.headertag.partnerScopes.push(function() {
 
         //? }
 
-        var yourBidder = new Partner(config);
-        window.headertag[PARTNER_ID] = {};
-        window.headertag[PARTNER_ID].callback = yourBidder.responseCallback;
-        window.headertag[PARTNER_ID].render = yourBidder.renderAd;
+        var tplBidder = new Partner(config);
 
-        callback(null, yourBidder);
+        try {
+            window.headertag[PARTNER_ID] = {};
+            window.headertag[PARTNER_ID].callback = tplBidder.responseCallback;
+            window.headertag[PARTNER_ID].render = tplBidder.renderAd;
+        } catch(e) {
+            console.log("Error: " + e);
+        }
+
+        callback(null, tplBidder);
     }
 
     function Partner(config) {
         var _this = this;
 
-        var __targetingType = config.targetingType;
-        var __supportedAnalytics = SUPPORTED_ANALYTICS;
-        var __supportedOptions = SUPPORTED_OPTIONS;
+        var targetingType = config.targetingType;
+        var supportedAnalytics = SUPPORTED_ANALYTICS;
+        var supportedOptions = SUPPORTED_OPTIONS;
 
-        var __creativeStore = {};
+        var prefetch = {
+            state: prefetchState.NEW,
+            correlator: null,
+            gCorrelator: null,
+            slotIds: [],
+            callbacks: []
+        };
+
+        var demandStore = {};
+        var creativeStore = {};
+        var demandObj = {
+            slot : {}
+        };
 
         /* =============================================================================
          * Set default targeting keys to be used for DFP. Values for omKey and idKey are
-         * mandatory. pmKey/pmidKey(deals) is only necessary if the partner will use a private market.
+         * mandatory. pmKey is only necessary if the partner will use a private market
+         * (deals).
          *
          * Standard values are:
          *
-         * omKey: ix_(PARTNER ID)_cpm
-         * pmKey: ix_(PARTNER ID)_cpm
+         * omKey: ix_(PARTNER ID)_om
+         * pmKey: ix_(PARTNER ID)_pm
          * idKey: ix_(PARTNER ID)_id
-         * pmidKey: ix_(PARTNER ID)_dealid
          */
-        var __targetingKeys = {
-            omKey: 'ix_tpl_cpm',
-            pmKey: 'ix_tpl_cpm',
-            idKey: 'ix_tpl_id',
-            pmidKey: 'ix_tpl_dealid'
+        // var omKey = 'ix_' + PARTNER_ID + '_om',
+        //     pmKey = 'ix_' + PARTNER_ID + '_pm',
+        //     idKey = 'ix_' + PARTNER_ID + '_id';
+
+        // TODO: change the middle set to use CONSTANTs;
+        var omKey = 'ix_tpl_om',
+            pmKey = 'ix_tpl_pm',
+            idKey = 'ix_tpl_id';
+
+        var targetingKeys = {
+            omKey: omKey,
+            pmKey: pmKey,
+            idKey: idKey
         };
 
         if (config.targetKeyOverride) {
             if (config.targetKeyOverride.omKey) {
-                __targetingKeys.omKey = config.targetKeyOverride.omKey;
+                omKey = config.targetKeyOverride.omKey;
             }
 
             if (config.targetKeyOverride.pmKey) {
-                __targetingKeys.pmKey = config.targetKeyOverride.pmKey;
+                idKey = config.targetKeyOverride.idKey;
             }
 
             if (config.targetKeyOverride.idKey) {
-                __targetingKeys.idKey = config.targetKeyOverride.idKey;
-            }
-
-            if (config.targetKeyOverride.pmidKey) {
-                __targetingKeys.pmidKey = config.targetKeyOverride.pmidKey;
+                idKey = config.targetKeyOverride.idKey;
             }
         }
 
-        var __bidTransformer;
+        var bidTransformer;
 
         /* =============================================================================
          * Set the default parameters for interpreting the prices sent by the bidder
@@ -293,7 +333,7 @@ window.headertag.partnerScopes.push(function() {
          * endpoint and expected by the DFP line item targeting. See
          * bid-rounding-transformer.js for more information.
          */
-        var __bidTransformConfig = {        // Default rounding configuration
+        var bidTransformConfig = {          // Default rounding configuration
             "floor": 0,                     // Minimum acceptable bid price
             "inputCentsMultiplier": 100,    // Multiply input bids by this to get cents
             "outputCentsDivisor": 1,        // Divide output bids in cents by this
@@ -308,8 +348,8 @@ window.headertag.partnerScopes.push(function() {
             }]
         };
 
-        if(config.roundingBuckets){
-            __bidTransformConfig = config.roundingBuckets;
+        if (config.roundingBuckets) {
+            bidTransformConfig = config.roundingBuckets;
         }
 
         /* =============================================================================
@@ -318,7 +358,7 @@ window.headertag.partnerScopes.push(function() {
          *
          * var roundedBid = bidTransformer.transformBid(rawBid);
          */
-        __bidTransformer = BidRoundingTransformer(__bidTransformConfig);
+        bidTransformer = BidRoundingTransformer(bidTransformConfig);
 
         /* =============================================================================
          * SECTION E | Copy over the Configurations to Internal Variables
@@ -335,29 +375,151 @@ window.headertag.partnerScopes.push(function() {
 
         /* PUT CODE HERE */
 
+        var xSlots = config.xSlots;
+        var mapping = config.mapping;
+
         /* -------------------------------------------------------------------------- */
 
         this.getPartnerTargetingType = function getPartnerTargetingType() {
-            return __targetingType;
+            return targetingType;
         };
 
         this.getSupportedAnalytics = function getSupportedAnalytics() {
-            return __supportedAnalytics;
+            return supportedAnalytics;
         };
 
         this.getSupportedOptions = function getSupportedOptions() {
-            return __supportedOptions;
+            return supportedOptions;
         };
 
-        function __requestDemandForSlots(htSlotNames, callback){
+        this.getPartnerDemandExpiry = function getPartnerDemandExpiry() {
+            return supportedOptions.demandExpiry;
+        };
+
+        this.setPartnerTargetingType = function setPartnerTargetingType(tt) {
+            if (!validateTargetingType(tt)) {
+                return false;
+            }
+
+            targetingType = tt;
+
+            return true;
+        };
+
+        this.prefetchDemand = function prefetchDemand(correlator, info, analyticsCallback) {
+            prefetch.state = prefetchState.IN_PROGRESS;
+            prefetch.correlator = correlator;
+            prefetch.slotIds = info.divIds.slice(); // ['htSlotID-1', 'htSlotID-2']
 
             /* =============================================================================
-             * SECTION F | Request demand from the Module's Ad Server
+             * SECTION F | Prefetch Demand from the Module's Ad Server
              * -----------------------------------------------------------------------------
              *
-             * The `htSlotNames` argument is an array of HeaderTagSlot IDs for which demand
-             * is requested. Look these up in the mapping object of the config to determine
-             * the partner xSlots which should have demand requested for them.
+             * The `info` argument is an object containing all the information required by
+             * this module to prefetch demand.
+             *
+             * prefetch.slotIds will be an array of htSlotIds. Use these to look up the
+             * slots to prefetch from the keys of the mapping object in the configs.
+             *
+             * Make a request to the module's ad server to get demand. If there is an error
+             * simply run the code block in 'STEP 06'. If there are no errors, put the
+             * retrieved demand in `demandStore[correlator]`.
+             *
+             * The demand must be in the following format:
+             *
+             *     {
+             *         slot: {
+             *             <htSlotId>: {
+             *                 timestamp: Utils.now(),
+             *                 demand: {
+             *                     <key>: <value>,
+             *                     <key>: <value>,
+             *                     ...
+             *                 }
+             *             },
+             *             ...
+             *         }
+             *     }
+             */
+
+            /* PUT CODE HERE */
+
+            /* -------------------------------------------------------------------------- */
+
+            /* =============================================================================
+             * SECTION G | End Prefetch
+             * -----------------------------------------------------------------------------
+             *
+             * Ensure this section happens after the demand has been prefetched or an error
+             * has occurred. This may mean putting it in a callback function.
+             */
+
+            prefetch.state = prefetchState.READY;
+
+            analyticsCallback(correlator);
+
+            for (var x = 0, lenx = prefetch.callbacks.length; x < lenx; x++) {
+                setTimeout(prefetch.callbacks[x], 0);
+            }
+
+            /* -------------------------------------------------------------------------- */
+        };
+
+        this.getDemand = function getDemand(correlator, slots, callback) {
+            if (prefetch.state === prefetchState.IN_PROGRESS) {
+                var currentDivIds = Utils.getDivIds(slots);
+                var prefetchInProgress = false;
+
+                for (var x = 0, lenx = currentDivIds.length; x < lenx; x++) {
+                    var slotIdIndex = prefetch.slotIds.indexOf(currentDivIds[x]);
+
+                    if (slotIdIndex !== -1) {
+                        prefetch.slotIds.splice(slotIdIndex, 1);
+                        prefetchInProgress = true;
+                    }
+                }
+
+                if (prefetchInProgress) {
+                    prefetch.callbacks.push(getDemand.bind(_this, correlator, slots, callback));
+                    return;
+                }
+            }
+
+            var demand = {
+                slot: {}
+            };
+
+            if (prefetch.state === prefetchState.READY) {
+                for (var i = slots.length - 1; i >= 0; i--) {
+                    var divId = slots[i].getSlotElementId();
+
+                    if (demandStore[prefetch.correlator].slot.hasOwnProperty(divId)) {
+                        if (supportedOptions.demandExpiry < 0 || (Utils.now() - demandStore[prefetch.correlator].slot[divId].timestamp) <= supportedOptions.demandExpiry) {
+                            demand.slot[divId] = demandStore[prefetch.correlator].slot[divId];
+                            slots.splice(i, 1);
+                        }
+
+                        delete demandStore[prefetch.correlator].slot[divId];
+                    }
+                }
+
+                if (!Utils.validateNonEmptyObject(demandStore[prefetch.correlator].slot)) {
+                    prefetch.state = prefetchState.USED;
+                }
+
+                if (!slots.length) {
+                    callback(null, demand);
+                    return;
+                }
+            }
+
+            /* =============================================================================
+             * SECTION H | Return Demand from the Module's Ad Server
+             * -----------------------------------------------------------------------------
+             *
+             * The `slots` argument is an array of HeaderTagSlot objects for which demand
+             * is requested. Call the getSlotElementId function on these objects to obtain
+             * their IDs to look up in the mapping object of the config.
              *
              * Make a request to the module's ad server to get demand. If there is an error
              * while doing so, then call `callback` as such:
@@ -375,51 +537,44 @@ window.headertag.partnerScopes.push(function() {
              * format:
              *
              *     {
-             *         <htSlotId>: {
-             *             demand: {
-             *                 <key>: <value>,
-             *                 <key>: <value>,
-             *                 ...
-             *             }
-             *         },
-             *         ...
+             *         slot: {
+             *             <htSlotId>: {
+             *                 timestamp: Utils.now(),
+             *                 demand: {
+             *                     <key>: <value>,
+             *                     <key>: <value>,
+             *                     ...
+             *                 }
+             *             },
+             *             ...
+             *         }
              *     }
              */
 
             /* PUT CODE HERE */
 
-            /* -------------------------------------------------------------------------- */
-
-        }
-
-        this.getDemand = function getDemand(correlator, slots, callback) {
-            var htSlotNames = Utils.getDivIds(slots);
-
-            __requestDemandForSlots(htSlotNames, function(err, demandForSlots){
-                if (err) {
-                    callback(err);
-                    return;
-                }
-
-                if(!demandForSlots){
-                    callback('Error: demandForSlots not set');
-                    return;
-                }
-
-                for (var htSlotName in demandForSlots) {
-                    if (!demandForSlots.hasOwnProperty(htSlotName)) {
-                        continue;
+            // map slots to TripleLift xSlots and make request for each placement
+            var numPlacements = Object.keys(slots).length;
+            slots.forEach(function(slot) {
+                var slotId = slot.getSlotElementId();
+                mapping[slotId].forEach(function(xSlotId) {
+                    if (xSlots.hasOwnProperty(xSlotId)) {
+                        var xSlotObject = xSlots[xSlotId];
+                        // callback passed to makeRequest function to be called upon success/failure
+                        makeRequest(slotId, xSlotObject, numPlacements, callback);
                     }
-                    demand.slot[htSlotName] = demandForSlots[htSlotName];
-                    demand.slot[htSlotName].timestamp = Utils.now();
-                }
-                callback(null, demand);
+                })
+
+
+
             });
+
+            /* -------------------------------------------------------------------------- */
         };
 
-        this.responseCallback = function(responseObj){
+        this.responseCallback = function(err, responseObj) {
             /* =============================================================================
-             * SECTION G | Parse Demand from the Module's Ad Server
+             * SECTION I | Parse Demand from the Module's Ad Server
              * -----------------------------------------------------------------------------
              *
              * Run this function as a callback when the ad server responds with demand.
@@ -433,7 +588,7 @@ window.headertag.partnerScopes.push(function() {
 
         this.renderAd = function(doc, targetingMap, width, height) {
             /* =============================================================================
-             * SECTION H | Render function
+             * SECTION J | Render function
              * -----------------------------------------------------------------------------
              *
              * This function will be called by the DFP creative to render the ad. It should
@@ -443,28 +598,116 @@ window.headertag.partnerScopes.push(function() {
 
             if (doc && targetingMap && width && height) {
                 try {
-                    var id = targetingMap[__targetingKeys.idKey][0];
-                    
-                    var sizeKey = width + 'x' + height;
-                    if (window.headertag.sizeRetargeting && window.headertag.sizeRetargeting[sizeKey]){
-                        width = window.headertag.sizeRetargeting[sizeKey][0];
-                        height = window.headertag.sizeRetargeting[sizeKey][1];
-                    }
-
-                    var ad = __creativeStore[id][width + 'x' + height].ad;
-
+                    var id = targetingMap[targetingKeys.idKey][0];
+                    var ad = creativeStore[id][width + 'x' + height].ad;
                     doc.write(ad);
                     doc.close();
                     if (doc.defaultView && doc.defaultView.frameElement) {
                         doc.defaultView.frameElement.width = width;
                         doc.defaultView.frameElement.height = height;
                     }
-                } catch (e){
+                } catch (e) {
                     //? if (DEBUG)
-                    console.log('Error trying to write ' + PARTNER_ID + ' ad to the page');
+                    console.log('Error trying to write ' + PARTNER_ID + ' ad to the page. Error: ' + e);
                 }
 
             }
+        };
+
+
+        /* =============================================================================
+             * TL Helpers | Private methods
+             * -----------------------------------------------------------------------------
+             *
+             */
+
+
+        // TODO: Clean this up (break up, redo scope, consider timing)
+        function makeRequest(htSlotId, xSlot, numPlacements, callback) {
+            window.headertag.Network.ajax({
+                url: buildTplCall(xSlot),
+                method: 'GET',
+                partnerId: PARTNER_ID,
+                withCredentials: true,
+                onSuccess: function(response) {
+                    parseResponse(JSON.parse(response));
+                },
+                onFailure: function() {
+                    callback('TPL: demand request failed');
+                }
+            });
+
+            function parseResponse(response) {
+                // TODO validate response
+                var slotDemand = {}
+                if(!response.status) {
+                    var responseSize = response.width + 'x' + response.height;
+                    // store creative in creativeStore. blow away same response size for now
+                    creativeStore[htSlotId] = creativeStore[htSlotId] || {};
+                    creativeStore[htSlotId][responseSize] = {};
+                    creativeStore[htSlotId][responseSize].ad = response.ad;
+
+                    // format demand response to pass to callback
+                    slotDemand = {
+                        timestamp: Utils.now(),
+                        demand: {
+                            [targetingKeys.omKey]: responseSize + "_" + bidTransformer.transformBid(response.cpm),
+                            [targetingKeys.pmKey]: response.deal_id || null,
+                            [targetingKeys.idKey]: htSlotId
+                        }
+                    };
+                }
+                demandObj.slot[htSlotId] = slotDemand;
+                // Add timeout to call the callback.
+                if (Object.keys(demandObj.slot).length === numPlacements) {
+                    callback(null, demandObj);
+                }
+            }
+        }
+
+        function buildTplCall(xSlot) {
+            var baseUrl = document.location.protocol + '//tlx.3lift.net/header/auction?';
+            var sizes = xSlot.sizes.map(function(size) {
+                return size.join('x');
+            }).join(',');
+
+            var params = {
+                inv_code: xSlot.inventoryCode,
+                lib: 'ix',
+                fe: isFlashEnabled() ? 1 : 0,
+                size: sizes,
+                referrer: document.location.href
+            };
+            if (xSlot.floor) {
+                params.floor = xSlot.floor;
+            }
+
+            return appendQueryParams(baseUrl, params);
+        }
+
+        function isFlashEnabled() {
+            var hasFlash = false;
+            try {
+                // check for Flash support in IE
+                if (new window.ActiveXObject('ShockwaveFlash.ShockwaveFlash')) {
+                    hasFlash = true;
+                }
+            } catch (e) {
+                // check for Flash support in other browsers
+                if (navigator.mimeTypes
+                    && navigator.mimeTypes['application/x-shockwave-flash'] !== undefined
+                    && navigator.mimeTypes['application/x-shockwave-flash'].enabledPlugin) {
+                    hasFlash = true;
+                }
+            }
+            return hasFlash;
+        }
+
+        function appendQueryParams(baseUrl, params) {
+            var queryParams = Object.keys(params).map(function(key) {
+                return key + '=' + encodeURIComponent(params[key]);
+            }).join('&');
+            return baseUrl + queryParams;
         };
     }
 
