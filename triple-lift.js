@@ -255,7 +255,8 @@ window.headertag.partnerScopes.push(function() {
         try {
             window.headertag[PARTNER_ID] = {};
             window.headertag[PARTNER_ID].callback = tplBidder.responseCallback;
-            window.headertag[PARTNER_ID].render = tplBidder.renderAd;
+            window.headertag.TripleLiftHtb = {};
+            window.headertag.TripleLiftHtb.render = tplBidder.renderAd;
         } catch(e) {
             console.log("Error: " + e);
         }
@@ -295,32 +296,34 @@ window.headertag.partnerScopes.push(function() {
          * pmKey: ix_(PARTNER ID)_pm
          * idKey: ix_(PARTNER ID)_id
          */
-        // var omKey = 'ix_' + PARTNER_ID + '_om',
-        //     pmKey = 'ix_' + PARTNER_ID + '_pm',
-        //     idKey = 'ix_' + PARTNER_ID + '_id';
 
-        // TODO: change the middle set to use CONSTANTs;
-        var omKey = 'ix_tpl_om',
-            pmKey = 'ix_tpl_pm',
+        var omKey = 'ix_tpl_cpm',
+            pmKey = 'ix_tpl_cpm',
+            pmidKey = 'ix_tpl_dealid',
             idKey = 'ix_tpl_id';
 
         var targetingKeys = {
             omKey: omKey,
             pmKey: pmKey,
-            idKey: idKey
+            idKey: idKey,
+            pmidKey: pmidKey
         };
 
         if (config.targetKeyOverride) {
             if (config.targetKeyOverride.omKey) {
-                omKey = config.targetKeyOverride.omKey;
+                targetingKeys.omKey = config.targetKeyOverride.omKey;
             }
 
             if (config.targetKeyOverride.pmKey) {
-                idKey = config.targetKeyOverride.idKey;
+                targetingKeys.pmKey = config.targetKeyOverride.pmKey;
             }
 
             if (config.targetKeyOverride.idKey) {
-                idKey = config.targetKeyOverride.idKey;
+                targetingKeys.idKey = config.targetKeyOverride.idKey;
+            }
+
+            if (config.targetKeyOverride.pmidKey) {
+                targetingKeys.pmidKey = config.targetKeyOverride.pmidKey;
             }
         }
 
@@ -642,21 +645,24 @@ window.headertag.partnerScopes.push(function() {
                 var slotDemand = {}
                 if(!response.status) {
                     var responseSize = response.width + 'x' + response.height;
-                    // store creative in creativeStore. blow away same response size for now
-                    creativeStore[htSlotId] = creativeStore[htSlotId] || {};
-                    creativeStore[htSlotId][responseSize] = {};
-                    creativeStore[htSlotId][responseSize].ad = response.ad;
+                    var creativeStoreId = response.callback_id;
 
-                    // format demand response to pass to callback
-                    slotDemand = {
-                        timestamp: Utils.now(),
-                        demand: {
-                            [targetingKeys.omKey]: responseSize + "_" + bidTransformer.transformBid(response.cpm),
-                            [targetingKeys.pmKey]: response.deal_id || null,
-                            [targetingKeys.idKey]: htSlotId
-                        }
-                    };
+                    creativeStore[creativeStoreId] = creativeStore[creativeStoreId] || {};
+                    creativeStore[creativeStoreId][responseSize] = {};
+                    creativeStore[creativeStoreId][responseSize].ad = response.ad;
+
+                    var demandTargeting = {};
+                    demandTargeting[targetingKeys.idKey] = creativeStoreId;
+                    if (response.deal_id) {
+                        demandTargeting[targetingKeys.pmKey] = responseSize + "_" + bidTransformer.transformBid(response.cpm);
+                        demandTargeting[targetingKeys.pmidKey] = response.deal_id;
+                    }
+                    else {
+                        demandTargeting[targetingKeys.omKey] = responseSize + "_" + bidTransformer.transformBid(response.cpm);
+                    }
                 }
+                slotDemand.timestamp = Utils.now();
+                slotDemand.demand = demandTargeting;
                 demandObj.slot[htSlotId] = slotDemand;
                 // Add timeout to call the callback.
                 if (Object.keys(demandObj.slot).length === numPlacements) {
@@ -672,6 +678,7 @@ window.headertag.partnerScopes.push(function() {
             }).join(',');
 
             var params = {
+                callback_id: Math.floor(Math.random() * 1000) + 1,
                 inv_code: xSlot.inventoryCode,
                 lib: 'ix',
                 fe: isFlashEnabled() ? 1 : 0,
