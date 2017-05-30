@@ -557,20 +557,30 @@ window.headertag.partnerScopes.push(function() {
             /* PUT CODE HERE */
 
             // map slots to TripleLift xSlots and make request for each placement
-            var numPlacements = Object.keys(slots).length;
+            var htSlot2xSlot = {};
+            // go through each htSlot (`slots`) passed in `getDemand`
             slots.forEach(function(slot) {
                 var slotId = slot.getSlotElementId();
-                mapping[slotId].forEach(function(xSlotId) {
-                    if (xSlots.hasOwnProperty(xSlotId)) {
-                        var xSlotObject = xSlots[xSlotId];
-                        // callback passed to makeRequest function to be called upon success/failure
-                        makeRequest(slotId, xSlotObject, numPlacements, callback);
-                    }
-                })
-
-
+                // collect IDs of active htSlot. check whether an xSlot is mapped in `mapping`
+                if(mapping.hasOwnProperty(slotId)) {
+                    mapping[slotId].forEach(function(xSlotId) {
+                        // if mapped xSlotId is in the xSlots object, acquire demand for the placement
+                        if (xSlots.hasOwnProperty(xSlotId)) {
+                            htSlot2xSlot[slotId] = xSlots[xSlotId];
+                        }
+                    })
+                }
 
             });
+
+            var numPlacements = Object.keys(htSlot2xSlot).length;
+            if (numPlacements == 0) {
+                // short-circuit if no eligible slots
+                callback(null);
+            } else {
+                // callback passed to makeRequest function to be called upon success/failure
+                makeRequest(htSlot2xSlot, numPlacements, callback);
+            }
 
             /* -------------------------------------------------------------------------- */
         };
@@ -626,23 +636,28 @@ window.headertag.partnerScopes.push(function() {
 
 
         // TODO: Clean this up (break up, redo scope, consider timing)
-        function makeRequest(htSlotId, xSlot, numPlacements, callback) {
-            window.headertag.Network.ajax({
-                url: buildTplCall(xSlot),
-                method: 'GET',
-                partnerId: PARTNER_ID,
-                withCredentials: true,
-                onSuccess: function(response) {
-                    parseResponse(JSON.parse(response));
-                },
-                onFailure: function() {
-                    callback('TPL: demand request failed');
-                }
+        function makeRequest(htSlot2xSlot, numPlacements, callback) {
+            Object.keys(htSlot2xSlot).forEach(function(slot) {
+                var htSlotId = slot;
+                var xSlot = htSlot2xSlot[slot];
+                window.headertag.Network.ajax({
+                    url: buildTplCall(xSlot),
+                    method: 'GET',
+                    partnerId: PARTNER_ID,
+                    withCredentials: true,
+                    onSuccess: function(response) {
+                        parseResponse(JSON.parse(response), htSlotId);
+                    },
+                    onFailure: function() {
+                        callback('TPL: demand request failed');
+                    }
+                });
             });
 
-            function parseResponse(response) {
-                // TODO validate response
+            function parseResponse(response, htSlotId) {
                 var slotDemand = {}
+                var demandTargeting = {};
+
                 if(!response.status) {
                     var responseSize = response.width + 'x' + response.height;
                     var creativeStoreId = response.callback_id;
@@ -651,7 +666,6 @@ window.headertag.partnerScopes.push(function() {
                     creativeStore[creativeStoreId][responseSize] = {};
                     creativeStore[creativeStoreId][responseSize].ad = response.ad;
 
-                    var demandTargeting = {};
                     demandTargeting[targetingKeys.idKey] = creativeStoreId;
                     if (response.deal_id) {
                         demandTargeting[targetingKeys.pmKey] = responseSize + "_" + bidTransformer.transformBid(response.cpm);
@@ -661,10 +675,12 @@ window.headertag.partnerScopes.push(function() {
                         demandTargeting[targetingKeys.omKey] = responseSize + "_" + bidTransformer.transformBid(response.cpm);
                     }
                 }
+
                 slotDemand.timestamp = Utils.now();
                 slotDemand.demand = demandTargeting;
                 demandObj.slot[htSlotId] = slotDemand;
-                // Add timeout to call the callback.
+
+                // TODO: Add timeout to call the callback.
                 if (Object.keys(demandObj.slot).length === numPlacements) {
                     callback(null, demandObj);
                 }
@@ -688,7 +704,6 @@ window.headertag.partnerScopes.push(function() {
             if (xSlot.floor) {
                 params.floor = xSlot.floor;
             }
-
             return appendQueryParams(baseUrl, params);
         }
 
