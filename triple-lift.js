@@ -255,7 +255,8 @@ window.headertag.partnerScopes.push(function() {
         try {
             window.headertag[PARTNER_ID] = {};
             window.headertag[PARTNER_ID].callback = tplBidder.responseCallback;
-            window.headertag[PARTNER_ID].render = tplBidder.renderAd;
+            window.headertag.TripleLiftHtb = {};
+            window.headertag.TripleLiftHtb.render = tplBidder.renderAd;
         } catch(e) {
             console.log("Error: " + e);
         }
@@ -295,32 +296,34 @@ window.headertag.partnerScopes.push(function() {
          * pmKey: ix_(PARTNER ID)_pm
          * idKey: ix_(PARTNER ID)_id
          */
-        // var omKey = 'ix_' + PARTNER_ID + '_om',
-        //     pmKey = 'ix_' + PARTNER_ID + '_pm',
-        //     idKey = 'ix_' + PARTNER_ID + '_id';
 
-        // TODO: change the middle set to use CONSTANTs;
-        var omKey = 'ix_tpl_om',
-            pmKey = 'ix_tpl_pm',
+        var omKey = 'ix_tpl_cpm',
+            pmKey = 'ix_tpl_cpm',
+            pmidKey = 'ix_tpl_dealid',
             idKey = 'ix_tpl_id';
 
         var targetingKeys = {
             omKey: omKey,
             pmKey: pmKey,
-            idKey: idKey
+            idKey: idKey,
+            pmidKey: pmidKey
         };
 
         if (config.targetKeyOverride) {
             if (config.targetKeyOverride.omKey) {
-                omKey = config.targetKeyOverride.omKey;
+                targetingKeys.omKey = config.targetKeyOverride.omKey;
             }
 
             if (config.targetKeyOverride.pmKey) {
-                idKey = config.targetKeyOverride.idKey;
+                targetingKeys.pmKey = config.targetKeyOverride.pmKey;
             }
 
             if (config.targetKeyOverride.idKey) {
-                idKey = config.targetKeyOverride.idKey;
+                targetingKeys.idKey = config.targetKeyOverride.idKey;
+            }
+
+            if (config.targetKeyOverride.pmidKey) {
+                targetingKeys.pmidKey = config.targetKeyOverride.pmidKey;
             }
         }
 
@@ -554,20 +557,30 @@ window.headertag.partnerScopes.push(function() {
             /* PUT CODE HERE */
 
             // map slots to TripleLift xSlots and make request for each placement
-            var numPlacements = Object.keys(slots).length;
+            var htSlot2xSlot = {};
+            // go through each htSlot (`slots`) passed in `getDemand`
             slots.forEach(function(slot) {
                 var slotId = slot.getSlotElementId();
-                mapping[slotId].forEach(function(xSlotId) {
-                    if (xSlots.hasOwnProperty(xSlotId)) {
-                        var xSlotObject = xSlots[xSlotId];
-                        // callback passed to makeRequest function to be called upon success/failure
-                        makeRequest(slotId, xSlotObject, numPlacements, callback);
-                    }
-                })
-
-
+                // collect IDs of active htSlot. check whether an xSlot is mapped in `mapping`
+                if(mapping.hasOwnProperty(slotId)) {
+                    mapping[slotId].forEach(function(xSlotId) {
+                        // if mapped xSlotId is in the xSlots object, acquire demand for the placement
+                        if (xSlots.hasOwnProperty(xSlotId)) {
+                            htSlot2xSlot[slotId] = xSlots[xSlotId];
+                        }
+                    })
+                }
 
             });
+
+            var numPlacements = Object.keys(htSlot2xSlot).length;
+            if (numPlacements == 0) {
+                // short-circuit if no eligible slots
+                callback(null);
+            } else {
+                // callback passed to makeRequest function to be called upon success/failure
+                makeRequest(htSlot2xSlot, numPlacements, callback);
+            }
 
             /* -------------------------------------------------------------------------- */
         };
@@ -623,42 +636,51 @@ window.headertag.partnerScopes.push(function() {
 
 
         // TODO: Clean this up (break up, redo scope, consider timing)
-        function makeRequest(htSlotId, xSlot, numPlacements, callback) {
-            window.headertag.Network.ajax({
-                url: buildTplCall(xSlot),
-                method: 'GET',
-                partnerId: PARTNER_ID,
-                withCredentials: true,
-                onSuccess: function(response) {
-                    parseResponse(JSON.parse(response));
-                },
-                onFailure: function() {
-                    callback('TPL: demand request failed');
-                }
+        function makeRequest(htSlot2xSlot, numPlacements, callback) {
+            Object.keys(htSlot2xSlot).forEach(function(slot) {
+                var htSlotId = slot;
+                var xSlot = htSlot2xSlot[slot];
+                window.headertag.Network.ajax({
+                    url: buildTplCall(xSlot),
+                    method: 'GET',
+                    partnerId: PARTNER_ID,
+                    withCredentials: true,
+                    onSuccess: function(response) {
+                        parseResponse(JSON.parse(response), htSlotId);
+                    },
+                    onFailure: function() {
+                        callback('TPL: demand request failed');
+                    }
+                });
             });
 
-            function parseResponse(response) {
-                // TODO validate response
+            function parseResponse(response, htSlotId) {
                 var slotDemand = {}
+                var demandTargeting = {};
+
                 if(!response.status) {
                     var responseSize = response.width + 'x' + response.height;
-                    // store creative in creativeStore. blow away same response size for now
-                    creativeStore[htSlotId] = creativeStore[htSlotId] || {};
-                    creativeStore[htSlotId][responseSize] = {};
-                    creativeStore[htSlotId][responseSize].ad = response.ad;
+                    var creativeStoreId = response.callback_id;
 
-                    // format demand response to pass to callback
-                    slotDemand = {
-                        timestamp: Utils.now(),
-                        demand: {
-                            [targetingKeys.omKey]: responseSize + "_" + bidTransformer.transformBid(response.cpm),
-                            [targetingKeys.pmKey]: response.deal_id || null,
-                            [targetingKeys.idKey]: htSlotId
-                        }
-                    };
+                    creativeStore[creativeStoreId] = creativeStore[creativeStoreId] || {};
+                    creativeStore[creativeStoreId][responseSize] = {};
+                    creativeStore[creativeStoreId][responseSize].ad = response.ad;
+
+                    demandTargeting[targetingKeys.idKey] = creativeStoreId;
+                    if (response.deal_id) {
+                        demandTargeting[targetingKeys.pmKey] = responseSize + "_" + bidTransformer.transformBid(response.cpm);
+                        demandTargeting[targetingKeys.pmidKey] = response.deal_id;
+                    }
+                    else {
+                        demandTargeting[targetingKeys.omKey] = responseSize + "_" + bidTransformer.transformBid(response.cpm);
+                    }
                 }
+
+                slotDemand.timestamp = Utils.now();
+                slotDemand.demand = demandTargeting;
                 demandObj.slot[htSlotId] = slotDemand;
-                // Add timeout to call the callback.
+
+                // TODO: Add timeout to call the callback.
                 if (Object.keys(demandObj.slot).length === numPlacements) {
                     callback(null, demandObj);
                 }
@@ -672,6 +694,7 @@ window.headertag.partnerScopes.push(function() {
             }).join(',');
 
             var params = {
+                callback_id: Math.floor(Math.random() * 1000) + 1,
                 inv_code: xSlot.inventoryCode,
                 lib: 'ix',
                 fe: isFlashEnabled() ? 1 : 0,
@@ -681,7 +704,6 @@ window.headertag.partnerScopes.push(function() {
             if (xSlot.floor) {
                 params.floor = xSlot.floor;
             }
-
             return appendQueryParams(baseUrl, params);
         }
 
