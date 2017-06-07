@@ -688,7 +688,7 @@ window.headertag.partnerScopes.push(function() {
         }
 
         function buildTplCall(xSlot) {
-            var baseUrl = document.location.protocol + '//tlx.3lift.net/header/auction?';
+            var baseUrl = document.location.protocol + '//tlx.3lift.com/header/auction?';
             var sizes = xSlot.sizes.map(function(size) {
                 return size.join('x');
             }).join(',');
