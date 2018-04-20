@@ -2,21 +2,22 @@
     "timeout": 1000,
     "xSlots": {
         "1": {
-            "placementId": "54321",
+            "inventoryCode": "adrizer_hb_test1",
+            "sizes": [
+                [728, 90]
+            ],
+            "floor": 2.50
+        },
+        "2": {
+            "inventoryCode": "adrizer_hb_test2",
             "sizes": [
                 [300, 250]
             ]
         },
-        "2": {
-            "placementId": "12345",
+        "3": {
+            "inventoryCode": "adrizer_hb_test3",
             "sizes": [
                 [300, 600]
-            ]
-        },
-        "3": {
-            "placementId": "654321",
-            "sizes": [
-                [728, 90]
             ]
         }
     },
