@@ -16,7 +16,6 @@
 // Dependencies ////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-var BidTransformer = require('bid-transformer.js');
 var Browser = require('browser.js');
 var Classify = require('classify.js');
 var Constants = require('constants.js');
@@ -24,8 +23,7 @@ var Partner = require('partner.js');
 var Size = require('size.js');
 var SpaceCamp = require('space-camp.js');
 var System = require('system.js');
-var Utilities = require('utilities.js');
-var Whoopsie = require('whoopsie.js');
+var Network = require('network.js');
 var EventsService;
 var RenderService;
 
@@ -33,6 +31,7 @@ var RenderService;
 var ConfigValidators = require('config-validators.js');
 var PartnerSpecificValidator = require('triple-lift-htb-validator.js');
 var Scribe = require('scribe.js');
+var Whoopsie = require('whoopsie.js');
 //? }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -40,11 +39,20 @@ var Scribe = require('scribe.js');
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Partner module template
+ * Triple Lift Header Tag Bidder module.
  *
  * @class
  */
 function TripleLiftHtb(configs) {
+    /* TripleLift endpoint only works with AJAX */
+    if (!Network.isXhrSupported()) {
+        //? if (DEBUG) {
+        Scribe.warn('Partner TripleLift requires AJAX support. Aborting instantiation.');
+        //? }
+
+        return null;
+    }
+
     /* =====================================
      * Data
      * ---------------------------------- */
@@ -67,11 +75,11 @@ function TripleLiftHtb(configs) {
     var __profile;
 
     /**
-     * Instances of BidTransformer for transforming bids.
+     * Base url for bid requests.
      *
      * @private {object}
      */
-    var __bidTransformers;
+    var __baseUrl;
 
     /* =====================================
      * Functions
@@ -81,18 +89,13 @@ function TripleLiftHtb(configs) {
      * ---------------------------------- */
 
     /**
-     * Generates the request URL and query data to the endpoint for the xSlots
-     * in the given returnParcels.
+     * Generates the request URL to the endpoint for the xSlots in the given
+     * returnParcels.
      *
      * @param  {object[]} returnParcels
-     *
-     * @return {object}
+     * @return {object} the request object
      */
     function __generateRequestObj(returnParcels) {
-        var queryObj = {};
-        var baseUrl = Browser.getProtocol() + '';
-        var callbackId = System.generateUniqueId();
-
         /* =============================================================================
          * STEP 2  | Generate Request URL
          * -----------------------------------------------------------------------------
@@ -149,69 +152,37 @@ function TripleLiftHtb(configs) {
          * }
          */
 
-        /* PUT CODE HERE */
+        /* MRA partners receive only one parcel in the array. */
+        var returnParcel = returnParcels[0];
+        var xSlot = returnParcel.xSlotRef;
 
-        /* -------------------------------------------------------------------------- */
+        /* request params */
+        var requestParams = {
+            inv_code: xSlot.inventoryCode, // jshint ignore:line
+            lib: 'ix',
+            fe: Browser.isFlashSupported() ? 1 : 0,
+            size: Size.arrayToString(xSlot.sizes),
+            referrer: Browser.getPageUrl(),
+            v: '2.1'
+        };
+
+        if (xSlot.floor) {
+            requestParams.floor = xSlot.floor;
+        }
 
         return {
-            url: baseUrl,
-            data: queryObj,
-            callbackId: callbackId
+            url: __baseUrl,
+            data: requestParams
         };
     }
-
-    /* =============================================================================
-     * STEP 3  | Response callback
-     * -----------------------------------------------------------------------------
-     *
-     * This generator is only necessary if the partner's endpoint has the ability
-     * to return an arbitrary ID that is sent to it. It should retrieve that ID from
-     * the response and save the response to adResponseStore keyed by that ID.
-     *
-     * If the endpoint does not have an appropriate field for this, set the profile's
-     * callback type to CallbackTypes.CALLBACK_NAME and omit this function.
-     */
-    function adResponseCallback(adResponse) {
-        /* get callbackId from adResponse here */
-        var callbackId = 0;
-        __baseClass._adResponseStore[callbackId] = adResponse;
-    }
-    /* -------------------------------------------------------------------------- */
 
     /* Helpers
      * ---------------------------------- */
 
-    /* =============================================================================
-     * STEP 5  | Rendering
-     * -----------------------------------------------------------------------------
-     *
-     * This function will render the ad given. Usually need not be changed unless
-     * special render functionality is needed.
-     *
-     * @param  {Object} doc The document of the iframe where the ad will go.
-     * @param  {string} adm The ad code that came with the original demand.
+    /* Parse adResponse, put demand into outParcels.
+     * Triple-Lift response contains a single result object.
      */
-    function __render(doc, adm) {
-        System.documentWrite(doc, adm);
-    }
-
-    /**
-     * Parses and extracts demand from adResponse according to the adapter and then attaches it
-     * to the corresponding bid's returnParcel in the correct format using targeting keys.
-     *
-     * @param {string} sessionId The sessionId, used for stats and other events.
-     *
-     * @param {any} adResponse This is the adresponse as returned from the bid request, that was either
-     * passed to a JSONP callback or simply sent back via AJAX.
-     *
-     * @param {object[]} returnParcels The array of original parcels, SAME array that was passed to
-     * generateRequestObj to signal which slots need demand. In this funciton, the demand needs to be
-     * attached to each one of the objects for which the demand was originally requested for.
-     */
-    function __parseResponse(sessionId, adResponse, returnParcels) {
-
-        var unusedReturnParcels = returnParcels.slice();
-
+    function __parseResponse(sessionId, responseObj, returnParcels) {
         /* =============================================================================
          * STEP 4  | Parse & store demand response
          * -----------------------------------------------------------------------------
@@ -231,130 +202,96 @@ function TripleLiftHtb(configs) {
          *
          */
 
-        /* ---------- Proces adResponse and extract the bids into the bids array ------------*/
+        /* ---------- Process adResponse and extract the bids into the bids array ------------*/
 
-        var bids = adResponse;
+        /* there is only one bid because mra */
+        var bid = responseObj;
 
         /* --------------------------------------------------------------------------------- */
 
-        for (var i = 0; i < bids.length; i++) {
+        /* MRA partners receive only one parcel in the array. */
+        var returnParcel = returnParcels[0];
 
-            var curReturnParcel;
+        /* header stats information */
+        var headerStatsInfo = {
+            sessionId: sessionId,
+            statsId: __profile.statsId,
+            htSlotId: returnParcel.htSlot.getId(),
+            requestId: returnParcel.requestId,
+            xSlotNames: [returnParcel.xSlotName]
+        };
 
-            for (var j = unusedReturnParcels.length - 1; j >= 0; j--) {
-
-                /**
-                 * This section maps internal returnParcels and demand returned from the bid request.
-                 * In order to match them correctly, they must be matched via some criteria. This
-                 * is usually some sort of placements or inventory codes. Please replace the someCriteria
-                 * key to a key that represents the placement in the configuration and in the bid responses.
-                 */
-
-                if (unusedReturnParcels[j].someCriteria === bids[i].someCriteria) { // change this
-                    curReturnParcel = unusedReturnParcels[j];
-                    unusedReturnParcels.splice(j, 1);
-                    break;
-                }
-            }
-
-            if (!curReturnParcel) {
-                continue;
+        /* If not a pass */
+        if (!bid.status && bid.cpm && bid.cpm > 0) {
+            if (__profile.enabledAnalytics.requestTime) {
+                EventsService.emit('hs_slot_bid', headerStatsInfo);
             }
 
             /* ---------- Fill the bid variables with data from the bid response here. ------------*/
+            /* Using the above variable, curBid, extract various information about the bid and assign it to
+             * these local variables */
 
-            var bidPrice; // the bid price for the given slot
-            var bidWidth; // the width of the given slot
-            var bidHeight; // the height of the given slot
-            var bidCreative; // the creative/adm for the given slot that will be rendered if is the winner.
-            var bidDealId; // the dealId if applicable for this slot.
-            var bidIsPass; // true/false value for if the module returned a pass for this slot.
+            var bidPrice = bid.cpm; /* the bid price for the given slot */
+            var bidCreative = bid.ad; /* the creative/adm for the given slot that will be rendered if is the winner. */
+            var bidSize = [Number(bid.width), Number(bid.height)]; /* the size of the given slot */
+
+            /* the dealId if applicable for this slot. */
+            var bidDealId = bid.deal_id; // jshint ignore:line
 
             /* ---------------------------------------------------------------------------------------*/
 
-            if (bidIsPass) {
-                //? if (DEBUG) {
-                Scribe.info(__profile.partnerId + ' returned pass for { id: ' + adResponse.id + ' }.');
-                //? }
-                if (__profile.enabledAnalytics.requestTime) {
-                    EventsService.emit('hs_slot_pass', {
-                        sessionId: sessionId,
-                        statsId: __profile.statsId,
-                        htSlotId: curReturnParcel.htSlot.getId(),
-                        xSlotNames: [curReturnParcel.xSlotName]
-                    });
-                }
+            returnParcel.targetingType = 'slot';
+            returnParcel.targeting = {};
+            returnParcel.size = bidSize;
 
-                curReturnParcel.pass = true;
+            var targetingCpm = '';
 
-                continue;
+            //? if(FEATURES.GPT_LINE_ITEMS) {
+            targetingCpm = __baseClass._bidTransformers.targeting.apply(bidPrice);
+            var sizeKey = Size.arrayToString(bidSize);
+
+            if (bidDealId) {
+                returnParcel.targeting[__baseClass._configs.targetingKeys.pmid] = [bidDealId];
+                returnParcel.targeting[__baseClass._configs.targetingKeys.pm] = [sizeKey + '_' + targetingCpm];
+            } else {
+                returnParcel.targeting[__baseClass._configs.targetingKeys.om] = [sizeKey + '_' + targetingCpm];
             }
+
+            returnParcel.targeting[__baseClass._configs.targetingKeys.id] = [returnParcel.requestId];
+            //? }
+
+            //? if(FEATURES.RETURN_CREATIVE) {
+            returnParcel.adm = bidCreative;
+            //? }
+
+            //? if(FEATURES.RETURN_PRICE) {
+            returnParcel.price = Number(__baseClass._bidTransformers.price.apply(bidPrice));
+            //? }
+
+            var pubKitAdId = RenderService.registerAd({
+                sessionId: sessionId,
+                partnerId: __profile.partnerId,
+                adm: bidCreative,
+                requestId: returnParcel.requestId,
+                size: returnParcel.size,
+                price: targetingCpm ? targetingCpm : undefined,
+                dealId: bidDealId ? bidDealId : undefined,
+                timeOfExpiry: __profile.features.demandExpiry.enabled ? (__profile.features.demandExpiry.value + System.now()) : 0
+            });
+
+            //? if(FEATURES.INTERNAL_RENDER) {
+            returnParcel.targeting.pubKitAdId = pubKitAdId;
+            //? }
+        } else {
+            //? if (DEBUG) {
+            Scribe.info(__profile.partnerId + ' no bid response for { id: ' + returnParcel.xSlotRef.inventoryCode + ' }.');
+            //? }
 
             if (__profile.enabledAnalytics.requestTime) {
-                EventsService.emit('hs_slot_bid', {
-                    sessionId: sessionId,
-                    statsId: __profile.statsId,
-                    htSlotId: curReturnParcel.htSlot.getId(),
-                    xSlotNames: [curReturnParcel.xSlotName]
-                });
+                EventsService.emit('hs_slot_pass', headerStatsInfo);
             }
 
-            curReturnParcel.size = [bidWidth, bidHeight];
-            curReturnParcel.targetingType = 'slot';
-            curReturnParcel.targeting = {};
-
-            //? if (FEATURES.GPT_LINE_ITEMS) {
-            var targetingCpm = __bidTransformers.targeting.apply(bidPrice);
-            var sizeKey = Size.arrayToString(curReturnParcel.size);
-
-            if (bidDealId !== '') {
-                curReturnParcel.targeting[__baseClass._configs.targetingKeys.pmid] = [sizeKey + '_' + bidDealId];
-                curReturnParcel.targeting[__baseClass._configs.targetingKeys.pm] = [sizeKey + '_' + targetingCpm];
-            } else {
-                curReturnParcel.targeting[__baseClass._configs.targetingKeys.om] = [sizeKey + '_' + targetingCpm];
-            }
-            curReturnParcel.targeting[__baseClass._configs.targetingKeys.id] = [curReturnParcel.requestId];
-
-            if (__baseClass._configs.lineItemType === Constants.LineItemTypes.ID_AND_SIZE) {
-                RenderService.registerAdByIdAndSize(
-                    sessionId,
-                    __profile.partnerId,
-                    __render, [bidCreative],
-                    '',
-                    __profile.features.demandExpiry.enabled ? (__profile.features.demandExpiry.value + System.now()) : 0,
-                    curReturnParcel.requestId, [bidWidth, bidHeight]
-                );
-            } else if (__baseClass._configs.lineItemType === Constants.LineItemTypes.ID_AND_PRICE) {
-                RenderService.registerAdByIdAndPrice(
-                    sessionId,
-                    __profile.partnerId,
-                    __render, [bidCreative],
-                    '',
-                    __profile.features.demandExpiry.enabled ? (__profile.features.demandExpiry.value + System.now()) : 0,
-                    curReturnParcel.requestId,
-                    targetingCpm
-                );
-            }
-            //? }
-
-            //? if (FEATURES.RETURN_CREATIVE) {
-            curReturnParcel.adm = bidCreative;
-            //? }
-
-            //? if (FEATURES.RETURN_PRICE) {
-            curReturnParcel.price = Number(__bidTransformers.price.apply(bidPrice));
-            //? }
-
-            //? if (FEATURES.INTERNAL_RENDER) {
-            var pubKitAdId = RenderService.registerAd(
-                sessionId,
-                __profile.partnerId,
-                __render, [bidCreative],
-                '',
-                __profile.features.demandExpiry.enabled ? (__profile.features.demandExpiry.value + System.now()) : 0
-            );
-            curReturnParcel.targeting.pubKitAdId = pubKitAdId;
-            //? }
+            returnParcel.pass = true;
         }
 
     }
@@ -371,15 +308,14 @@ function TripleLiftHtb(configs) {
          * STEP 1  | Partner Configuration
          * -----------------------------------------------------------------------------
          *
-         * Please fill out the below partner profile according to the steps in the README doc.
+         * Please review below partner profile according to the steps in the README doc.
          */
 
-        /* ---------- Please fill out this partner profile according to your module ------------*/
         __profile = {
-            partnerId: 'TripleLiftHtb', // PartnerName
-            namespace: 'TripleLiftHtb', // Should be same as partnerName
-            statsId: 'TPL', // Unique partner identifier
-            version: '2.0.0',
+            partnerId: 'TripleLiftHtb',
+            namespace: 'TripleLiftHtb',
+            statsId: 'TPL',
+            version: '2.1.1',
             targetingType: 'slot',
             enabledAnalytics: {
                 requestTime: true
@@ -394,17 +330,19 @@ function TripleLiftHtb(configs) {
                     value: 0
                 }
             },
-            targetingKeys: { // Targeting keys for demand, should follow format ix_{statsId}_id
-                id: 'ix_tpl_id',
+            targetingKeys: {
                 om: 'ix_tpl_cpm',
                 pm: 'ix_tpl_cpm',
-                pmid: 'ix_tpl_dealid'
+                pmid: 'ix_tpl_dealid',
+                id: 'ix_tpl_id'
             },
+            bidUnitInCents: 100,
             lineItemType: Constants.LineItemTypes.ID_AND_SIZE,
-            callbackType: Partner.CallbackTypes.ID, // Callback type, please refer to the readme for details
-            architecture: Partner.Architectures.SRA, // Request architecture, please refer to the readme for details
-            requestType: Partner.RequestTypes.ANY // Request type, jsonp, ajax, or any.
+            callbackType: Partner.CallbackTypes.NONE,
+            architecture: Partner.Architectures.MRA,
+            requestType: Partner.RequestTypes.AJAX
         };
+
         /* ---------------------------------------------------------------------------------------*/
 
         //? if (DEBUG) {
@@ -415,64 +353,12 @@ function TripleLiftHtb(configs) {
         }
         //? }
 
-        /*
-         * Adjust the below bidTransformerConfigs variable to match the units the adapter
-         * sends bids in and to match line item setup. This configuration variable will
-         * be used to transform the bids going into DFP.
-         */
-
-        /* - Please fill out this bid trasnformer according to your module's bid response format - */
-        var bidTransformerConfigs = {
-            //? if (FEATURES.GPT_LINE_ITEMS) {
-            targeting: {
-                inputCentsMultiplier: 1, // Input is in cents
-                outputCentsDivisor: 1, // Output as cents
-                outputPrecision: 0, // With 0 decimal places
-                roundingType: 'FLOOR', // jshint ignore:line
-                floor: 0,
-                buckets: [{
-                    max: 2000, // Up to 20 dollar (above 5 cents)
-                    step: 5 // use 5 cent increments
-                }, {
-                    max: 5000, // Up to 50 dollars (above 20 dollars)
-                    step: 100 // use 1 dollar increments
-                }]
-            },
-            //? }
-            //? if (FEATURES.RETURN_PRICE) {
-            price: {
-                inputCentsMultiplier: 1, // Input is in cents
-                outputCentsDivisor: 1, // Output as cents
-                outputPrecision: 0, // With 0 decimal places
-                roundingType: 'NONE',
-            },
-            //? }
-        };
-
-        /* --------------------------------------------------------------------------------------- */
-
-        if (configs.bidTransformer) {
-            //? if (FEATURES.GPT_LINE_ITEMS) {
-            bidTransformerConfigs.targeting = configs.bidTransformer;
-            //? }
-            //? if (FEATURES.RETURN_PRICE) {
-            bidTransformerConfigs.price.inputCentsMultiplier = configs.bidTransformer.inputCentsMultiplier;
-            //? }
-        }
-
-        __bidTransformers = {};
-
-        //? if (FEATURES.GPT_LINE_ITEMS) {
-        __bidTransformers.targeting = BidTransformer(bidTransformerConfigs.targeting);
-        //? }
-        //? if (FEATURES.RETURN_PRICE) {
-        __bidTransformers.price = BidTransformer(bidTransformerConfigs.price);
-        //? }
+        /* build base bid request url */
+        __baseUrl = Browser.getProtocol() + '//tlx.3lift.com/header/auction';
 
         __baseClass = Partner(__profile, configs, null, {
             parseResponse: __parseResponse,
-            generateRequestObj: __generateRequestObj,
-            adResponseCallback: adResponseCallback
+            generateRequestObj: __generateRequestObj
         });
     })();
 
@@ -496,18 +382,17 @@ function TripleLiftHtb(configs) {
          * ---------------------------------- */
 
         //? if (TEST) {
-        profile: __profile,
+        __profile: __profile,
+        __baseUrl: __baseUrl,
         //? }
 
         /* Functions
          * ---------------------------------- */
 
         //? if (TEST) {
-        render: __render,
-        parseResponse: __parseResponse,
-        generateRequestObj: __generateRequestObj,
-        adResponseCallback: adResponseCallback,
-        //? }
+        __generateRequestObj: __generateRequestObj,
+        __parseResponse: __parseResponse
+            //? }
     };
 
     return Classify.derive(__baseClass, derivedClass);
