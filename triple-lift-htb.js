@@ -16,7 +16,6 @@
 // Dependencies ////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-var Browser = require('browser.js');
 var Classify = require('classify.js');
 var Constants = require('constants.js');
 var Partner = require('partner.js');
@@ -24,6 +23,7 @@ var Size = require('size.js');
 var SpaceCamp = require('space-camp.js');
 var System = require('system.js');
 var Network = require('network.js');
+var ComplianceService;
 var EventsService;
 var RenderService;
 
@@ -32,6 +32,7 @@ var ConfigValidators = require('config-validators.js');
 var PartnerSpecificValidator = require('triple-lift-htb-validator.js');
 var Scribe = require('scribe.js');
 var Whoopsie = require('whoopsie.js');
+
 //? }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -80,6 +81,7 @@ function TripleLiftHtb(configs) {
      * @private {object}
      */
     var __baseUrl;
+    var gdprStatus = ComplianceService.gdpr.getConsent();
 
     /* =====================================
      * Functions
@@ -165,7 +167,10 @@ function TripleLiftHtb(configs) {
             referrer: Browser.getPageUrl(),
             v: '2.1'
         };
-
+        if (!!gdprStatus.consentString) {
+              params.gdpr = gdprStatus.applies;
+              params.cmp_cs = gdprStatus.consentString;
+            }
         if (xSlot.floor) {
             requestParams.floor = xSlot.floor;
         }
@@ -301,6 +306,7 @@ function TripleLiftHtb(configs) {
      * ---------------------------------- */
 
     (function __constructor() {
+        ComplianceService = SpaceCamp.services.ComplianceService;
         EventsService = SpaceCamp.services.EventsService;
         RenderService = SpaceCamp.services.RenderService;
 
