@@ -16,6 +16,7 @@
 // Dependencies ////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+var Browser = require('browser.js');
 var Classify = require('classify.js');
 var Constants = require('constants.js');
 var Partner = require('partner.js');
@@ -81,7 +82,6 @@ function TripleLiftHtb(configs) {
      * @private {object}
      */
     var __baseUrl;
-    var gdprStatus = ComplianceService.gdpr.getConsent();
 
     /* =====================================
      * Functions
@@ -153,6 +153,8 @@ function TripleLiftHtb(configs) {
          *     callbackId: '_23sd2ij4i1' //unique id used for pairing requests and responses
          * }
          */
+
+        var gdprStatus = ComplianceService.gdpr.getConsent();
 
         /* MRA partners receive only one parcel in the array. */
         var returnParcel = returnParcels[0];
