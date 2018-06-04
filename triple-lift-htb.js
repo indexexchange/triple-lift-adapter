@@ -171,8 +171,8 @@ function TripleLiftHtb(configs) {
             v: '2.1'
         };
         if (privacyEnabled) {
-              params.gdpr = gdprStatus.applies;
-              params.cmp_cs = gdprStatus.consentString;
+              requestParams.gdpr = gdprStatus.applies;
+              requestParams.cmp_cs = gdprStatus.consentString;
             }
         if (xSlot.floor) {
             requestParams.floor = xSlot.floor;
