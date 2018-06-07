@@ -24,6 +24,7 @@ var Size = require('size.js');
 var SpaceCamp = require('space-camp.js');
 var System = require('system.js');
 var Network = require('network.js');
+var ComplianceService;
 var EventsService;
 var RenderService;
 
@@ -32,6 +33,7 @@ var ConfigValidators = require('config-validators.js');
 var PartnerSpecificValidator = require('triple-lift-htb-validator.js');
 var Scribe = require('scribe.js');
 var Whoopsie = require('whoopsie.js');
+
 //? }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -152,6 +154,9 @@ function TripleLiftHtb(configs) {
          * }
          */
 
+        var gdprStatus = ComplianceService.gdpr.getConsent();
+        var privacyEnabled = ComplianceService.isPrivacyEnabled();
+
         /* MRA partners receive only one parcel in the array. */
         var returnParcel = returnParcels[0];
         var xSlot = returnParcel.xSlotRef;
@@ -165,7 +170,10 @@ function TripleLiftHtb(configs) {
             referrer: Browser.getPageUrl(),
             v: '2.1'
         };
-
+        if (privacyEnabled) {
+              requestParams.gdpr = gdprStatus.applies;
+              requestParams.cmp_cs = gdprStatus.consentString;
+            }
         if (xSlot.floor) {
             requestParams.floor = xSlot.floor;
         }
@@ -301,6 +309,7 @@ function TripleLiftHtb(configs) {
      * ---------------------------------- */
 
     (function __constructor() {
+        ComplianceService = SpaceCamp.services.ComplianceService;
         EventsService = SpaceCamp.services.EventsService;
         RenderService = SpaceCamp.services.RenderService;
 
