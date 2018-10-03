@@ -1,23 +1,19 @@
 {
-  "name": "triple-lift-module",
-  "version": "2.1.0",
-  "description": "a complete self-serve partner development package for the header tag wrapper",
-  "main": "triple-lift-htb.js",
-  "scripts": {
-    "test": "jasmine"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git@github.com:indexexchange/triple-lift-adapter.git"
-  },
+  "name": "self-serve-partners-template",
+  "version": "1.0.0",
+  "description": "A complete self-serve partner development package for Index Exchange's wrapper.",
+  "private": true,
   "author": "Index Exchange",
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE.md",
   "devDependencies": {
+    "adapter-development-suite": "git+https://github.com/indexexchange/adapter-development-suite.git",
+    "eslint": "^4.13.1",
+    "eslint-config-adapters": "git+https://github.com/indexexchange/eslint-config-adapters.git"
   },
-  "dependencies": {
-    "jasmine": "^2.6.0",
-    "chai": "^4.0.2",
-    "proxyquire": "^1.8.0",
-    "schema-inspector": "^1.6.8"
+  "scripts": {
+    "debug": "node ./node_modules/adapter-development-suite/bin/index.js",
+    "win-debug": "node .\\node_modules\\adapter-development-suite\\bin\\index.js",
+    "lint": "node ./node_modules/eslint/bin/eslint.js --ignore-path=./.eslintignore .",
+    "win-lint": "node .\\node_modules\\eslint\\bin\\eslint.js --ignore-path=.\\.eslintignore ."
   }
 }
