@@ -161,9 +161,9 @@ function TripleLiftHtb(configs) {
         var returnParcel = returnParcels[0];
         var xSlot = returnParcel.xSlotRef;
 
-        /* request params */
+        /* Request params */
         var requestParams = {
-            inv_code: xSlot.inventoryCode, // jshint ignore:line
+            inv_code: xSlot.inventoryCode, // eslint-disable-line
             lib: 'ix',
             fe: Browser.isFlashSupported() ? 1 : 0,
             size: Size.arrayToString(xSlot.sizes),
@@ -172,9 +172,10 @@ function TripleLiftHtb(configs) {
         };
 
         if (privacyEnabled) {
-              requestParams.gdpr = gdprStatus.applies;
-              requestParams.cmp_cs = gdprStatus.consentString;
+            requestParams.gdpr = gdprStatus.applies;
+            requestParams.cmp_cs = gdprStatus.consentString; // eslint-disable-line
         }
+
         if (xSlot.floor) {
             requestParams.floor = xSlot.floor;
         }
@@ -211,9 +212,9 @@ function TripleLiftHtb(configs) {
          *
          */
 
-        /* ---------- Process adResponse and extract the bids into the bids array ------------*/
+        /* ---------- Process adResponse and extract the bids into the bids array ------------ */
 
-        /* there is only one bid because mra */
+        /* There is only one bid because mra */
         var bid = responseObj;
 
         /* --------------------------------------------------------------------------------- */
@@ -221,7 +222,7 @@ function TripleLiftHtb(configs) {
         /* MRA partners receive only one parcel in the array. */
         var returnParcel = returnParcels[0];
 
-        /* header stats information */
+        /* Header stats information */
         var headerStatsInfo = {
             sessionId: sessionId,
             statsId: __profile.statsId,
@@ -236,18 +237,23 @@ function TripleLiftHtb(configs) {
                 EventsService.emit('hs_slot_bid', headerStatsInfo);
             }
 
-            /* ---------- Fill the bid variables with data from the bid response here. ------------*/
+            /* ---------- Fill the bid variables with data from the bid response here. ------------ */
             /* Using the above variable, curBid, extract various information about the bid and assign it to
              * these local variables */
 
-            var bidPrice = bid.cpm; /* the bid price for the given slot */
-            var bidCreative = bid.ad; /* the creative/adm for the given slot that will be rendered if is the winner. */
-            var bidSize = [Number(bid.width), Number(bid.height)]; /* the size of the given slot */
+            /* The bid price for the given slot */
+            var bidPrice = bid.cpm;
 
-            /* the dealId if applicable for this slot. */
-            var bidDealId = bid.deal_id; // jshint ignore:line
+            /* The creative/adm for the given slot that will be rendered if is the winner. */
+            var bidCreative = bid.ad;
 
-            /* ---------------------------------------------------------------------------------------*/
+            /* The size of the given slot */
+            var bidSize = [Number(bid.width), Number(bid.height)];
+
+            /* The dealId if applicable for this slot. */
+            var bidDealId = bid.deal_id; // eslint-disable-line
+
+            /* --------------------------------------------------------------------------------------- */
 
             returnParcel.targetingType = 'slot';
             returnParcel.targeting = {};
@@ -283,9 +289,9 @@ function TripleLiftHtb(configs) {
                 adm: bidCreative,
                 requestId: returnParcel.requestId,
                 size: returnParcel.size,
-                price: targetingCpm ? targetingCpm : undefined,
-                dealId: bidDealId ? bidDealId : undefined,
-                timeOfExpiry: __profile.features.demandExpiry.enabled ? (__profile.features.demandExpiry.value + System.now()) : 0
+                price: targetingCpm ? targetingCpm : undefined, // eslint-disable-line
+                dealId: bidDealId ? bidDealId : undefined, // eslint-disable-line
+                timeOfExpiry: __profile.features.demandExpiry.enabled ? (__profile.features.demandExpiry.value + System.now()) : 0 // eslint-disable-line
             });
 
             //? if(FEATURES.INTERNAL_RENDER) {
@@ -293,7 +299,7 @@ function TripleLiftHtb(configs) {
             //? }
         } else {
             //? if (DEBUG) {
-            Scribe.info(__profile.partnerId + ' no bid response for { id: ' + returnParcel.xSlotRef.inventoryCode + ' }.');
+            Scribe.info(__profile.partnerId + ' no bid response for { id: ' + returnParcel.xSlotRef.inventoryCode + ' }.'); // eslint-disable-line
             //? }
 
             if (__profile.enabledAnalytics.requestTime) {
@@ -302,7 +308,6 @@ function TripleLiftHtb(configs) {
 
             returnParcel.pass = true;
         }
-
     }
 
     /* =====================================
@@ -353,7 +358,7 @@ function TripleLiftHtb(configs) {
             requestType: Partner.RequestTypes.AJAX
         };
 
-        /* ---------------------------------------------------------------------------------------*/
+        /* --------------------------------------------------------------------------------------- */
 
         //? if (DEBUG) {
         var results = ConfigValidators.partnerBaseConfig(configs) || PartnerSpecificValidator(configs);
@@ -363,7 +368,7 @@ function TripleLiftHtb(configs) {
         }
         //? }
 
-        /* build base bid request url */
+        /* Build base bid request url */
         __baseUrl = Browser.getProtocol() + '//tlx.3lift.com/header/auction';
 
         __baseClass = Partner(__profile, configs, null, {
@@ -402,7 +407,7 @@ function TripleLiftHtb(configs) {
         //? if (TEST) {
         __generateRequestObj: __generateRequestObj,
         __parseResponse: __parseResponse
-            //? }
+        //? }
     };
 
     return Classify.derive(__baseClass, derivedClass);
